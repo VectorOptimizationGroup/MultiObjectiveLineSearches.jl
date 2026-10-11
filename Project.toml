@@ -1,0 +1,7 @@
+name = "MultiObjectiveLineSearches"
+uuid = "9027f03a-5984-4601-a9fc-20d939aaf152"
+version = "0.1.0"
+authors = ["Danilo Rodrigues de Souza", "Leandro da Fonseca Prudente"]
+
+[compat]
+julia = "1.11"
