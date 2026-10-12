@@ -1,22 +1,28 @@
 """
-    BackTracking(; initial_step=InitialStatic(), c_1=1e-4, max_iters=1000,
-                 minstep=1e-15, maxstep=1.0, verbose=0)
+    BackTracking(; initial_step=InitialStatic(), c_1=1e-4, tau_1=0.05, tau_2=0.95,
+                 max_iters=1000, minstep=1e-15, maxstep=1.0, verbose=0)
 
 Backtracking line search for an Armijo-type sufficient decrease condition,
 with safeguarded quadratic interpolation.
 
-[`configure_linesearch`](@ref) checks the options after conversion:
-`0 < c_1 < 1`, finite `0 < minstep < maxstep`, an initial step in
-`[minstep, maxstep]`, `max_iters >= 0` and `verbose` equal to 0 or 1.
+An interpolated step is used only if it lies in `[tau_1*alpha, tau_2*alpha]`,
+where `alpha` is the rejected step; otherwise the step is halved.
 `max_iters` limits the number of step reductions; zero allows only the initial
 trial. Set `verbose=1` to log the final diagnostic with `@info`.
+
+[`configure_linesearch`](@ref) checks the options after conversion:
+`0 < c_1 < 1`, `0 < tau_1 <= 1/2 <= tau_2 < 1`, finite `0 < minstep < maxstep`,
+an initial step in `[minstep, maxstep]`, `max_iters >= 0` and `verbose` equal
+to 0 or 1.
 
 See [BackTracking](@ref backtracking) for the condition, its sources and the
 reduction rules.
 """
-struct BackTracking{I<:InitialStatic,C<:Real,L<:Real,U<:Real} <: AbstractLineSearchMethod
+struct BackTracking{I<:InitialStatic,C<:Real,A<:Real,B<:Real,L<:Real,U<:Real} <: AbstractLineSearchMethod
     initial_step::I
     c_1::C
+    tau_1::A
+    tau_2::B
     max_iters::Int
     minstep::L
     maxstep::U
@@ -24,14 +30,18 @@ struct BackTracking{I<:InitialStatic,C<:Real,L<:Real,U<:Real} <: AbstractLineSea
 end
 
 function BackTracking(; initial_step::InitialStatic=InitialStatic(),
-                      c_1::Real=1e-4, max_iters::Integer=1000,
-                      minstep::Real=1e-15, maxstep::Real=1.0, verbose::Integer=0)
-    return BackTracking(initial_step, c_1, Int(max_iters), minstep, maxstep, Int(verbose))
+                      c_1::Real=1e-4, tau_1::Real=0.05, tau_2::Real=0.95,
+                      max_iters::Integer=1000, minstep::Real=1e-15,
+                      maxstep::Real=1.0, verbose::Integer=0)
+    return BackTracking(initial_step, c_1, tau_1, tau_2, Int(max_iters),
+                        minstep, maxstep, Int(verbose))
 end
 
 struct BacktrackingParams{T<:AbstractFloat}
     initial_step::InitialStatic{T}
     c_1::T
+    tau_1::T
+    tau_2::T
     max_iters::Int
     minstep::T
     maxstep::T
@@ -45,26 +55,30 @@ function configure_linesearch(spec::BackTracking, ::Type{T}) where {T<:AbstractF
     c_1, lo, hi, alpha = T(spec.c_1), T(spec.minstep), T(spec.maxstep), T(spec.initial_step.alpha)
     isfinite(c_1) && zero(T) < c_1 < one(T) ||
         throw(ArgumentError("c_1 must be finite and in (0, 1) after conversion"))
+    tau_1, tau_2 = T(spec.tau_1), T(spec.tau_2)
+    zero(T) < tau_1 <= T(0.5) <= tau_2 < one(T) ||
+        throw(ArgumentError("require 0 < tau_1 <= 1/2 <= tau_2 < 1 after conversion"))
     all(isfinite, (lo, hi, alpha)) && zero(T) < lo < hi && lo <= alpha <= hi ||
         throw(ArgumentError("require finite 0 < minstep < maxstep and minstep <= alpha <= maxstep after conversion"))
-    return BacktrackingParams(InitialStatic(alpha), c_1, spec.max_iters, lo, hi, spec.verbose)
+    return BacktrackingParams(InitialStatic(alpha), c_1, tau_1, tau_2, spec.max_iters,
+                              lo, hi, spec.verbose)
 end
 
 """
-    _quadratic_step(alpha, value, slope, value0)
+    _quadratic_step(alpha, value, slope, value0, tau_1, tau_2)
 
 Propose a step from the quadratic matching `value0`, `slope` and `value` at
 `alpha`. Use the proposal only when `slope < 0`, the denominator is finite and
-nonzero, and the proposal is finite and in `[0.05*alpha, 0.95*alpha]`;
+nonzero, and the proposal is finite and in `[tau_1*alpha, tau_2*alpha]`;
 otherwise return `alpha/2`.
 See [Quadratic interpolation and safeguards](@ref quadratic-interpolation).
 """
-function _quadratic_step(alpha::T, value::T, slope::T, value0::T) where {T}
+function _quadratic_step(alpha::T, value::T, slope::T, value0::T, tau_1::T, tau_2::T) where {T}
     if slope < zero(T)
         den = value - value0 - alpha * slope
         if !iszero(den) && isfinite(den)
             candidate = (-slope * alpha^2) / (T(2) * den)
-            if isfinite(candidate) && T(0.05) * alpha <= candidate <= T(0.95) * alpha
+            if isfinite(candidate) && tau_1 * alpha <= candidate <= tau_2 * alpha
                 return candidate
             end
         end
@@ -159,7 +173,8 @@ function perform_linesearch!(search::BacktrackingParams{T}, evaluate!,
             alpha *= T(0.5)
         else
             j = failed
-            alpha = _quadratic_step(alpha, F_trial[j], slopes[j], Fx[j])
+            alpha = _quadratic_step(alpha, F_trial[j], slopes[j], Fx[j],
+                                    search.tau_1, search.tau_2)
         end
         iterations += 1
         if alpha <= search.minstep

@@ -71,6 +71,12 @@ end
     @test y ≈ T[1]
     @test F ≈ T[0] atol=eps(T)
     @test r.alpha isa T && eltype(F) === T
+    # The proposal 1/3 is used only inside [tau_1*alpha, tau_2*alpha]; otherwise halve.
+    for (tau_1, tau_2, alpha) in ((0.3, 0.7, 1/3), (0.4, 0.95, 0.5), (0.5, 0.5, 0.5))
+        r,_,_ = search_case(T, quadratic!; d=T[3], Fx=T[1], slopes=T[-6], factor=T(-6),
+                            options=BackTracking(; tau_1, tau_2))
+        @test r.success && r.nfev == 2 && r.alpha ≈ T(alpha)
+    end
     # Both components violate; the first determines interpolation, independently of factor.
     trials = T[]
     function first_violation!(F,y)
@@ -78,6 +84,14 @@ end
     end
     r,_,_ = search_case(T, first_violation!; Fx=T[1,1], slopes=T[-6,-12], factor=T(-2))
     @test r.success && trials ≈ T[1, 1/3]
+    # Upper bound: the proposal 0.8 is kept with tau_2 = 0.95 and halved with tau_2 = 0.6.
+    upper!(F,y) = (push!(trials,y[1]); F[1] = length(trials)==1 ? T(-0.375) : T(-10); nothing)
+    for (tau_2, step) in ((0.95, 0.8), (0.6, 0.5))
+        empty!(trials)
+        r,_,_ = search_case(T, upper!; Fx=T[0], slopes=T[-1], factor=-one(T),
+                            options=BackTracking(; c_1=0.5, tau_2))
+        @test r.success && trials ≈ T[1, step]
+    end
     # Nonnegative component slope is valid and uses halving, not scalar descent rejection.
     empty!(trials)
     r,_,_ = search_case(T, first_violation!; Fx=T[1,1], slopes=T[0, -12], factor=T(-2))

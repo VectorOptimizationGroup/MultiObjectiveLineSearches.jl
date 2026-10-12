@@ -27,17 +27,18 @@ choices made in the cited works.
 |:---|:---|:---|
 | `initial_step` | `InitialStatic(alpha=1.0)` | First trial step of each search |
 | `c_1` | `1e-4` | Sufficient decrease coefficient |
+| `tau_1` | `0.05` | Lower safeguard ``\tau_1`` of the quadratic interpolation |
+| `tau_2` | `0.95` | Upper safeguard ``\tau_2`` of the quadratic interpolation |
 | `minstep` | `1e-15` | A reduced step at or below this value ends the search |
 | `maxstep` | `1.0` | Upper bound for the initial step |
 | `max_iters` | `1000` | Maximum number of step reductions |
 | `verbose` | `0` | `1` logs the final diagnostic with `@info` |
 
 [`configure_linesearch`](@ref) converts the options to the element type `T` and
-checks that ``0<c_1<1``, that `minstep`, `maxstep` and the initial step are
-finite, that `0 < minstep < maxstep`, and that
-`minstep <= initial_step.alpha <= maxstep`. Steps only decrease during a search,
-so no trial step exceeds `maxstep`. The interpolation safeguards are fixed at
-``\tau_1=0.05`` and ``\tau_2=0.95``.
+checks that ``0<c_1<1``, that ``0<\tau_1\leq1/2\leq\tau_2<1``, that
+`minstep`, `maxstep` and the initial step are finite, that
+`0 < minstep < maxstep`, and that `minstep <= initial_step.alpha <= maxstep`.
+Steps only decrease during a search, so no trial step exceeds `maxstep`.
 
 ## [Armijo-type condition](@id armijo-condition)
 
@@ -156,12 +157,11 @@ and otherwise chooses the next step in ``[\tau_1\alpha,\tau_2\alpha]``, with
 the condition holds for all ``\alpha`` in an interval ``(0,\bar\alpha]`` with
 ``\bar\alpha\leq1``. With the default options, every trial step lies in
 ``(0,1]``, the range of step sizes in their Algorithm 1. Every reduction made
-by `BackTracking` lies in ``[\tau_1\alpha,\tau_2\alpha]`` with ``\tau_1=0.05``
-and ``\tau_2=0.95``; see
+by `BackTracking` lies in ``[\tau_1\alpha,\tau_2\alpha]``; see
 [Quadratic interpolation and safeguards](@ref quadratic-interpolation).
-Their Section 5 reports these values of ``\tau_1`` and ``\tau_2``, with
-``c_1=10^{-4}`` and the line search coded by quadratic interpolation of the
-coordinate functions.
+The defaults ``c_1=10^{-4}``, ``\tau_1=0.05`` and ``\tau_2=0.95`` are the
+values reported in their Section 5, where the line search is coded by
+quadratic interpolation of the coordinate functions.
 
 The objectives ``F_i`` need not be differentiable here, so the slopes used for
 interpolation are chosen by the caller, for example the directional
@@ -193,15 +193,19 @@ nonzero, ``\widehat\alpha`` is finite, and
 
 ```math
 \tau_1\alpha\leq\widehat\alpha\leq\tau_2\alpha,
-\qquad \tau_1=0.05,\quad\tau_2=0.95.
 ```
+
+where ``\tau_1`` and ``\tau_2`` are the options `tau_1` and `tau_2`.
 
 In that case ``\widehat\alpha>0`` and ``s_j<0`` imply ``b_j>0``, so
 ``\widehat\alpha`` is the minimizer of ``q_j``. Otherwise the new step is
 ``\alpha/2``: a proposal outside the interval is replaced, not clamped to it.
 If some trial value is `NaN` or infinite, the step is halved without
-interpolation. Since ``1/2\in[\tau_1,\tau_2]``, every reduction gives a new
-step between 5% and 95% of the previous one.
+interpolation. Since ``\tau_1\leq1/2\leq\tau_2``, halving also lies in the
+interval, so every reduction gives a new step in ``[\tau_1\alpha,\tau_2\alpha]``;
+with the defaults, between 5% and 95% of the previous one. With
+`tau_1 = tau_2 = 0.5`, every reduction halves the step, as in the search of
+Fliege and Svaiter [FS2000](@cite).
 
 When ``s_j=\phi_j'(0)``, ``q_j`` and ``\widehat\alpha`` are the quadratic
 interpolant and its minimizer in Nocedal and Wright [NW2006](@cite),
@@ -212,7 +216,7 @@ acceptance test uses the objective values and ``\eta``.
 Nocedal and Wright continue with cubic interpolation after the first quadratic
 trial, and reset a trial to half its predecessor when it is too close to or
 too much smaller than that predecessor. `BackTracking` uses the quadratic
-model at every reduction of a trial with finite values, with the fixed interval
+model at every reduction of a trial with finite values, with the interval
 above. Choosing the first violating objective and the fallback rules above are
 choices of this implementation; the cited works do not prescribe them.
 
