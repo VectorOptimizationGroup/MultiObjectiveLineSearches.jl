@@ -7,13 +7,11 @@ bib = CitationBibliography(
     style = :numeric,
 )
 
-# No remote yet: `remotes = nothing` and no `deploydocs` until publication.
 makedocs(
     sitename = "MultiObjectiveLineSearches.jl",
     modules = [MultiObjectiveLineSearches],
     plugins = [bib],
     checkdocs = :exports,
-    remotes = nothing,
     format = Documenter.HTML(
         prettyurls = true,
         edit_link = nothing,
@@ -33,4 +31,9 @@ makedocs(
         "API Reference" => "api.md",
         "References" => "references.md",
     ],
+)
+
+deploydocs(
+    repo = "github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl.git",
+    devbranch = "main",
 )
