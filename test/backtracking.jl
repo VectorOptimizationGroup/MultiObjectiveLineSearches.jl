@@ -1,4 +1,3 @@
-# Independent regressions adapted from MOSolvers aa62945; no solver dependency.
 function search_case(T, evaluator; x=T[0], d=T[1], Fx=T[0, 0], slopes=T[-1, -1],
                      factor=-one(T), options=BackTracking())
     y, Fy = similar(x), similar(Fx)

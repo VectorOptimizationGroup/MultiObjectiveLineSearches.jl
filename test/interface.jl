@@ -4,7 +4,7 @@
     @test result.nfev == 2 && result.iterations == 1
     @test !ismutabletype(typeof(result))
     @test !hasfield(typeof(result), :F_final)
-    # Loading configuration does not load solver/backend packages.
-    forbidden = ("MOSolvers", "JuMP", "Ipopt", "HiGHS", "StochasticSolvers")
-    @test all(id.name ∉ forbidden for id in keys(Base.loaded_modules))
+    # The package depends only on Julia's standard library.
+    project = TOML.parsefile(joinpath(pkgdir(MultiObjectiveLineSearches), "Project.toml"))
+    @test all(isdir(joinpath(Sys.STDLIB, name)) for name in keys(get(project, "deps", Dict())))
 end
