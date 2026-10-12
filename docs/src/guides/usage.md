@@ -54,15 +54,53 @@ made in the cited works.
 ## Consume the result
 
 If `result.success` is true, the two trial buffers hold the accepted point and
-objective values. The caller can copy them into its current state:
+objective values, and the caller can copy them into its current state. The
+example uses the problem of the [Quick Start](@ref):
 
-```julia
-if result.success
-    copyto!(x, x_trial)
-    copyto!(Fx, F_trial)
-else
-    # Keep x and Fx, and handle result.reason in the calling solver.
-end
+```jldoctest usage
+julia> using MultiObjectiveLineSearches
+
+julia> function objectives!(values, x)
+           values[1] = (x[1] - 1)^2
+           values[2] = (x[1] - 1)^2 + 1
+           return nothing
+       end;
+
+julia> x = [0.0]; d = [3.0]; Fx = [1.0, 2.0]; slopes = [-6.0, -6.0];
+
+julia> search = configure_linesearch(BackTracking(), Float64);
+
+julia> x_trial = similar(x); F_trial = similar(Fx);
+
+julia> result = perform_linesearch!(search, objectives!, x, d, Fx, slopes,
+                                  x_trial, F_trial; factor = maximum(slopes));
+
+julia> if result.success
+           copyto!(x, x_trial)
+           copyto!(Fx, F_trial)
+       end;
+
+julia> x, Fx
+([1.0], [0.0, 1.0])
+```
+
+An evaluator that cannot evaluate a trial point returns a message. The search
+stops, and the caller keeps its current state:
+
+```jldoctest usage
+julia> failing!(values, x) = "objective undefined at the trial point";
+
+julia> result = perform_linesearch!(search, failing!, x, d, Fx, slopes,
+                                  x_trial, F_trial; factor = maximum(slopes));
+
+julia> result.success, result.reason, result.nfev
+(false, :evaluation_failure, 1)
+
+julia> result.message
+"objective undefined at the trial point"
+
+julia> x, Fx
+([1.0], [0.0, 1.0])
 ```
 
 On failure, trial buffers are scratch data and do not represent a new accepted

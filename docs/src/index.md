@@ -11,14 +11,10 @@ interpolation.
 
 ## Contents
 
+- [Installation](@ref) covers installation from a local checkout.
+- [Quick Start](@ref) provides a first configuration and line search.
 - [Using a line search](@ref) explains evaluation, buffers and result handling.
 - [BackTracking](@ref backtracking) presents the formulation, literature,
   safeguards and an executable example.
 - [API Reference](@ref) documents the shared configuration and result types.
 - [References](@ref) lists the cited publications.
-
-## Installation
-
-The package is not registered. From a separate Julia environment, use
-`Pkg.develop(path="/path/to/MultiObjectiveLineSearches.jl")` with your checkout.
-Julia 1.11 or later is required.

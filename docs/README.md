@@ -10,3 +10,14 @@ julia --project=docs docs/make.jl
 ```
 
 The generated site is written to `docs/build/index.html`.
+
+To browse it through a local server:
+
+```bash
+julia -e 'using LiveServer; serve(dir="docs/build")'
+```
+
+Then open `http://localhost:8000/`.
+
+The build runs every `jldoctest` block and fails if an example errors or its
+output differs from the documented one.
