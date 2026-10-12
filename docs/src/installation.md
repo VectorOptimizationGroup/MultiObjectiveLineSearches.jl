@@ -1,11 +1,34 @@
 # Installation
 
+MultiObjectiveLineSearches.jl is not registered. The installation commands
+below are illustrative: they modify the active environment or use a
+placeholder path.
+
+## Install from GitHub
+
+Add MultiObjectiveLineSearches.jl to the active Julia environment directly
+from its GitHub repository:
+
+```julia
+import Pkg
+Pkg.add(url = "https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl")
+```
+
+Using a project-specific environment is recommended so that the package
+version is recorded alongside the rest of the project's dependencies. See the
+Julia `Pkg` documentation for environment creation and activation. Julia 1.11
+or later is required.
+
 ## Install from a local checkout
 
-MultiObjectiveLineSearches.jl is not registered. To install a local checkout
-into the active Julia environment, provide its path. The installation command
-below is illustrative: it modifies the active environment and uses a
-placeholder path.
+Clone the repository when you need a local copy of the source:
+
+```bash
+git clone https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl.git
+```
+
+To install that checkout into the active Julia environment, provide its local
+path:
 
 ```julia
 import Pkg
@@ -13,9 +36,7 @@ Pkg.add(path = "/absolute/path/to/MultiObjectiveLineSearches.jl")
 ```
 
 Use `Pkg.develop(path = ...)` instead when local source edits should be visible
-immediately from the active environment. Using a project-specific environment
-is recommended so that the package version is recorded alongside the rest of
-the project's dependencies. Julia 1.11 or later is required.
+immediately from the active environment.
 
 ## Verify the installation
 

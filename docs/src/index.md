@@ -11,7 +11,7 @@ interpolation.
 
 ## Contents
 
-- [Installation](@ref) covers installation from a local checkout.
+- [Installation](@ref) covers installation from GitHub and local checkouts.
 - [Quick Start](@ref) provides a first configuration and line search.
 - [Using a line search](@ref) explains evaluation, buffers and result handling.
 - [BackTracking](@ref backtracking) presents the formulation, literature,
