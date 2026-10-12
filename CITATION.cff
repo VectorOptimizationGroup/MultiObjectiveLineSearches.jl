@@ -1,0 +1,22 @@
+cff-version: "1.2.0"
+message: "If you use MultiObjectiveLineSearches.jl in your research, please cite the software using these metadata."
+title: "MultiObjectiveLineSearches.jl"
+type: software
+version: "0.1.0"
+authors:
+  - family-names: "Souza"
+    given-names: "Danilo Rodrigues de"
+    orcid: "https://orcid.org/0000-0002-1786-1005"
+    affiliation: "University of Campinas (UNICAMP)"
+  - family-names: "Prudente"
+    given-names: "Leandro da Fonseca"
+    orcid: "https://orcid.org/0000-0003-1098-4317"
+    affiliation: "Federal University of Goiás (UFG)"
+repository-code: "https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl"
+url: "https://vectoroptimizationgroup.github.io/MultiObjectiveLineSearches.jl/dev/"
+license: MIT
+abstract: "Line searches for multiobjective optimization in Julia."
+keywords:
+  - "Julia"
+  - "multiobjective optimization"
+  - "line search"
