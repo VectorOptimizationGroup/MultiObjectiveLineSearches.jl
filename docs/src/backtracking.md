@@ -1,134 +1,186 @@
 # [BackTracking](@id backtracking)
 
-`BackTracking` finds a positive step satisfying componentwise Armijo decrease.
-This page relates that condition to the smooth formulations of Fliege and
-Svaiter [FS2000](@cite) and Lucambio Pérez and Prudente [LPP2018](@cite), and
-the composite formulation of Assunção, Ferreira and Prudente [AFP2025](@cite).
-The interpolation model follows the scalar construction in Nocedal and Wright,
-Section 3.5 [NW2006](@cite).
+`BackTracking` searches along a given direction for a step size that satisfies
+an Armijo-type sufficient decrease condition in every objective. Rejected steps
+are reduced by safeguarded quadratic interpolation.
 
 ## Overview
 
-Let ``F:\mathbb{R}^n\to\mathbb{R}^m`` denote the objective vector, let ``x``
-be the current point and let ``d`` be a search direction. Define
+Let ``F=(F_1,\ldots,F_m):\mathbb{R}^n\to\mathbb{R}^m`` be the objective map,
+let ``x`` be the current point and let ``d(x)`` be a search direction at ``x``.
+Along ``d(x)``, write
 
 ```math
-\phi_i(\alpha)=F_i(x+\alpha d),\qquad i=1,\ldots,m.
+\phi_i(\alpha)=F_i(x+\alpha d(x)),\qquad i=1,\ldots,m.
 ```
 
-The search changes only ``\alpha``. The caller supplies ``d``, the objective
-values ``F(x)``, interpolation slopes, and a scalar decrease factor.
+`BackTracking` uses only the values ``\phi_i(\alpha)`` returned by the caller's
+evaluator at trial steps, together with two inputs from the caller: a scalar
+decrease factor ``\eta<0`` (`factor`) and one slope ``s_i`` per objective
+(`slopes`). It computes no derivatives and makes no assumption about ``F``,
+such as differentiability or convexity. The meaning of ``\eta`` and ``s_i`` is
+set by the method that calls the search;
+[Armijo-type conditions in the literature](@ref armijo-literature) shows the
+choices made in the cited works.
 
 | Option | Default | Meaning |
 |:---|:---|:---|
-| `initial_step` | `InitialStatic(alpha=1.0)` | First trial of each search |
-| `c_1` | `1e-4` | Sufficient-decrease coefficient, ``0<c_1<1`` |
-| `minstep` | `1e-15` | Lower stopping threshold for a reduced step |
-| `maxstep` | `1.0` | Upper bound on the initial step |
-| `max_iters` | `1000` | Maximum number of reductions |
-| `verbose` | `0` | `1` prints the final diagnostic |
+| `initial_step` | `InitialStatic(alpha=1.0)` | First trial step of each search |
+| `c_1` | `1e-4` | Sufficient decrease coefficient |
+| `minstep` | `1e-15` | A reduced step at or below this value ends the search |
+| `maxstep` | `1.0` | Upper bound for the initial step |
+| `max_iters` | `1000` | Maximum number of step reductions |
+| `verbose` | `0` | `1` logs the final diagnostic with `@info` |
 
-All steps must be finite and positive, with
-`minstep < maxstep` and `minstep <= initial_step.alpha <= maxstep`.
-The quadratic safeguards are fixed at ``\tau_1=0.05`` and ``\tau_2=0.95``.
+[`configure_linesearch`](@ref) converts the options to the element type `T` and
+checks that ``0<c_1<1``, that `minstep`, `maxstep` and the initial step are
+finite, that `0 < minstep < maxstep`, and that
+`minstep <= initial_step.alpha <= maxstep`. Steps only decrease during a search,
+so no trial step exceeds `maxstep`. The interpolation safeguards are fixed at
+``\tau_1=0.05`` and ``\tau_2=0.95``.
 
-## Sufficient decrease and its sources
+## [Armijo-type condition](@id armijo-condition)
 
-### Componentwise directional derivatives
-
-For differentiable ``F``, write ``s_i=\nabla F_i(x)^\mathsf{T}d``.
-Fliege and Svaiter use the componentwise condition
+`BackTracking` accepts ``\alpha>0`` when every ``F_i(x+\alpha d(x))`` is finite
+and
 
 ```math
-F_i(x+\alpha d)\leq F_i(x)+c_1\alpha s_i,
+F_i(x+\alpha d(x))\leq F_i(x)+c_1\alpha\eta,\qquad i=1,\ldots,m.
+```
+
+The same term ``c_1\alpha\eta`` is used for all objectives. For ``m=1`` and
+``\eta=\nabla F_1(x)^\mathsf{T}d(x)``, this is the Armijo condition of scalar
+optimization; see Nocedal and Wright [NW2006](@cite), equation (3.4).
+
+The multiobjective works cited here name their extensions of this condition
+differently: Fliege and Svaiter [FS2000](@cite) call it an Armijo-like rule,
+Lucambio Pérez and Prudente [LPP2018](@cite) the Armijo condition for vector
+optimization, and Assunção, Ferreira and Prudente [AFP2025](@cite) an
+Armijo-type step size. This documentation uses *Armijo-type condition*.
+
+When ``F`` is differentiable, the generalized directional derivative of ``F``
+at ``x`` along ``d(x)`` is
+
+```math
+\mathcal{D}(x,d(x))=\max_{1\leq j\leq m}\nabla F_j(x)^\mathsf{T}d(x),
+```
+
+see [LPP2018](@cite). If ``\mathcal{D}(x,d(x))<0``, then ``d(x)`` is a
+descent direction for every objective.
+
+`BackTracking` does not verify that the condition can be satisfied: with an
+arbitrary negative `factor`, the search may end with `:minimum_step` or
+`:max_iterations`. For each condition in
+[Armijo-type conditions in the literature](@ref armijo-literature), the cited
+work shows that, under its assumptions, all sufficiently small steps are
+accepted.
+
+## [Armijo-type conditions in the literature](@id armijo-literature)
+
+The works below differ in the decrease term on the right-hand side of the
+condition. In all of them, ``c_1\in(0,1)``.
+
+### One slope per objective
+
+Fliege and Svaiter [FS2000](@cite), Section 4, assume that ``F`` is
+differentiable and that ``\nabla F_i(x)^\mathsf{T}d(x)<0`` for all ``i``, and
+accept ``\alpha`` when
+
+```math
+F_i(x+\alpha d(x))\leq F_i(x)+c_1\alpha\nabla F_i(x)^\mathsf{T}d(x),
+\qquad i=1,\ldots,m,
+```
+
+their equation (7). The search starts at ``\alpha=1`` and halves ``\alpha``
+until (7) holds. Their Lemma 4 shows that (7) holds strictly for all
+sufficiently small ``\alpha>0``.
+
+Each objective has its own slope ``s_i=\nabla F_i(x)^\mathsf{T}d(x)`` on the
+right-hand side. `BackTracking` does not implement this rule, since it uses one
+scalar ``\eta`` for all objectives. With ``\eta=\mathcal{D}(x,d(x))`` we have
+``s_i\leq\eta``, so (7) implies the `BackTracking` condition; the converse does
+not hold in general.
+
+### The generalized directional derivative
+
+Lucambio Pérez and Prudente [LPP2018](@cite) work in vector optimization, where
+vectors are compared through the partial order induced by a cone. In the
+multiobjective case this order is componentwise, and their Armijo condition,
+equation (6), reduces to equation (7) of Fliege and Svaiter [FS2000](@cite).
+Their Definition 3.1 introduces Wolfe conditions for vector optimization. With
+the choices the authors indicate for multiobjective problems, the sufficient
+decrease part of these conditions, (7a) and (8a), uses the generalized
+directional derivative as the common term:
+
+```math
+F_i(x+\alpha d(x))\leq F_i(x)+c_1\alpha\mathcal{D}(x,d(x)),
 \qquad i=1,\ldots,m.
 ```
 
-Their Section 4, equation (7), starts from step one and repeatedly halves it.
-When all ``s_i<0``, differentiability ensures that sufficiently small positive
-steps satisfy the condition (Lemma 4) [FS2000](@cite).
+This is the `BackTracking` condition with ``\eta=\mathcal{D}(x,d(x))``.
+The proof of their Proposition 3.2 shows that it holds for all sufficiently
+small ``\alpha>0`` when ``F`` is continuously differentiable,
+``\mathcal{D}(x,d(x))<0`` and ``F`` is bounded below along ``d(x)``.
+`BackTracking` checks only this decrease condition, not the curvature
+conditions (7b) or (8b).
 
-Here the right-hand side has a **different slope for each objective**.
-`BackTracking` instead takes one scalar `factor`; passing `slopes` does not
-select this componentwise-slope acceptance rule.
+### Composite objectives
 
-### A common scalar factor
-
-The implemented test is
-
-```math
-F_i(x+\alpha d)\leq F_i(x)+c_1\alpha\eta,
-\qquad i=1,\ldots,m,\qquad \eta=\mathtt{factor}<0.
-```
-
-For smooth objectives, one choice is
+Assunção, Ferreira and Prudente [AFP2025](@cite) consider objectives
+``F_i=f_i+h_i``, where ``f_i`` is continuously differentiable and ``h_i`` is
+proper, convex and lower semicontinuous. At an iterate ``x``, their generalized
+conditional gradient method computes, in equations (14) and (15),
 
 ```math
-\eta=\max_{1\leq i\leq m}\nabla F_i(x)^\mathsf{T}d.
+\begin{aligned}
+p(x)&\in\operatorname*{argmin}_{u}\max_{1\leq j\leq m}
+\{h_j(u)-h_j(x)+\nabla f_j(x)^\mathsf{T}(u-x)\},\\
+\theta(x)&=\max_{1\leq j\leq m}
+\{h_j(p(x))-h_j(x)+\nabla f_j(x)^\mathsf{T}(p(x)-x)\},
+\end{aligned}
 ```
 
-This is the sufficient-decrease part of the Wolfe conditions in Lucambio Pérez
-and Prudente, Definition 3.1, equations (7a) and (8a), specialized to the
-nonnegative orthant with the canonical basis and ``e=(1,\ldots,1)^\mathsf{T}``
-[LPP2018](@cite). `BackTracking` checks decrease only; it does not impose the
-curvature conditions (7b) or (8b).
-
-For a common descent direction, every ``s_i\leq\eta<0``. Consequently the
-componentwise-slope rule above implies the common-factor test, but the converse
-need not hold. The common-factor test also holds for sufficiently small steps:
-``s_i\leq\eta<c_1\eta`` gives strict first-order decrease in each component.
-This argument depends on that relationship between ``\eta`` and the direction;
-an arbitrary negative `factor` alone does not guarantee acceptance.
-
-### Composite objectives and a subproblem gap
-
-Write ``F_i=f_i+h_i``, with ``f_i`` differentiable and ``h_i`` convex, possibly
-nonsmooth. In the generalized conditional-gradient construction, the caller
-computes a point ``p`` and a gap
+and uses the direction ``d(x)=p(x)-x``. By their Lemma 3.1,
+``\theta(x)\leq0``, with equality if and only if ``x`` is Pareto critical.
+Their Armijo-type step size (Section 4, steps LS0–LS2) starts at ``\alpha=1``,
+accepts ``\alpha`` when
 
 ```math
-p\in\operatorname*{argmin}_u\max_i
-\{h_i(u)-h_i(x)+\nabla f_i(x)^\mathsf{T}(u-x)\},
-\qquad
-\theta(x)=\max_i\{h_i(p)-h_i(x)+\nabla f_i(x)^\mathsf{T}(p-x)\}.
+F_i(x+\alpha d(x))\leq F_i(x)-c_1\alpha|\theta(x)|,
+\qquad i=1,\ldots,m,
 ```
 
-For a nonstationary iterate, ``\theta(x)<0``. With ``d=p-x``, the Armijo rule is
+and otherwise chooses the next step in ``[\tau_1\alpha,\tau_2\alpha]``, with
+``0<\tau_1<\tau_2<1``. This is the `BackTracking` condition with
+``\eta=-|\theta(x)|``. Their Proposition 4.1 shows that, when ``\theta(x)<0``,
+the condition holds for all ``\alpha`` in an interval ``(0,\bar\alpha]`` with
+``\bar\alpha\leq1``. With the default options, every trial step lies in
+``(0,1]``, the range of step sizes in their Algorithm 1. Every reduction made
+by `BackTracking` lies in ``[\tau_1\alpha,\tau_2\alpha]`` with ``\tau_1=0.05``
+and ``\tau_2=0.95``; see
+[Quadratic interpolation and safeguards](@ref quadratic-interpolation).
+Their Section 5 reports these values of ``\tau_1`` and ``\tau_2``, with
+``c_1=10^{-4}`` and the line search coded by quadratic interpolation of the
+coordinate functions.
 
-```math
-F_i(x+\alpha d)\leq F_i(x)-c_1\alpha|\theta(x)|,
-\qquad 0<\alpha\leq1.
-```
-
-Thus the caller passes `factor=-abs(theta)`. Assunção, Ferreira and Prudente,
-Section 4, steps LS0–LS2, start at one and require each reduction to lie in
-``[\omega_1\alpha,\omega_2\alpha]`` [AFP2025](@cite). The bound ``\alpha\leq1``
-keeps the trial on the segment between ``x`` and ``p``. The package's default
-`maxstep=1.0` is suitable for this construction; a caller that changes the
-bound must still enforce its problem's feasibility requirements.
-
-The paper denotes the nonsmooth and smooth terms by ``g_i`` and ``h_i``;
-the notation above uses ``h_i`` and ``f_i`` respectively. In a composite
-application, `slopes` can contain the smooth-part values
-``\nabla f_i(x)^\mathsf{T}d`` used for interpolation. They are distinct from
-the subproblem gap and need not be derivatives of the complete ``F_i``.
-The search neither solves the subproblem nor checks its optimality conditions.
+The objectives ``F_i`` need not be differentiable here, so the slopes used for
+interpolation are chosen by the caller, for example the directional
+derivatives ``\nabla f_i(x)^\mathsf{T}d(x)`` of the differentiable parts.
 
 ## [Quadratic interpolation and safeguards](@id quadratic-interpolation)
 
-Suppose a finite trial fails sufficient decrease. Choose its **first violating
-component** ``j``. For the current step ``\alpha`` and supplied slope ``s_j``,
-fit
+Suppose a trial with finite values is rejected, and let ``j`` be the first
+index, in increasing order, whose condition fails. With the current step
+``\alpha`` and the caller's slope ``s_j``, `BackTracking` forms
 
 ```math
 q_j(t)=\phi_j(0)+s_jt+b_jt^2,
 \qquad
-b_j=\frac{\phi_j(\alpha)-\phi_j(0)-\alpha s_j}{\alpha^2}.
+b_j=\frac{\phi_j(\alpha)-\phi_j(0)-\alpha s_j}{\alpha^2},
 ```
 
-The model matches the two values and the supplied slope:
-``q_j(0)=\phi_j(0)``, ``q_j'(0)=s_j`` and
-``q_j(\alpha)=\phi_j(\alpha)``. Its stationary point is
+so that ``q_j(0)=\phi_j(0)``, ``q_j'(0)=s_j`` and ``q_j(\alpha)=\phi_j(\alpha)``.
+The stationary point of ``q_j`` is
 
 ```math
 \widehat\alpha
@@ -136,55 +188,75 @@ The model matches the two values and the supplied slope:
         {2\,[\phi_j(\alpha)-\phi_j(0)-\alpha s_j]}.
 ```
 
-When ``s_j`` is the actual directional derivative, these are the quadratic
-interpolant and candidate of Nocedal and Wright, equations (3.57)–(3.58)
-[NW2006](@cite). In the composite case, using the smooth-part slope gives an
-interpolation model rather than an exact derivative match for the full objective.
-The model proposes a step; the full objective vector always decides acceptance.
-
-The implementation uses ``\widehat\alpha`` only if ``s_j<0``, the denominator
-is finite and nonzero, the candidate is finite, and
+The new step is ``\widehat\alpha`` if ``s_j<0``, the denominator is finite and
+nonzero, ``\widehat\alpha`` is finite, and
 
 ```math
 \tau_1\alpha\leq\widehat\alpha\leq\tau_2\alpha,
 \qquad \tau_1=0.05,\quad\tau_2=0.95.
 ```
 
-Otherwise it uses ``\alpha/2``. This rejects an unsuitable proposal; it does
-not clamp it to an endpoint. The bounds avoid both negligible reductions and
-excessively short steps relative to the current trial. Halving lies inside
-this interval, so every reduction has the same safeguards.
+In that case ``\widehat\alpha>0`` and ``s_j<0`` imply ``b_j>0``, so
+``\widehat\alpha`` is the minimizer of ``q_j``. Otherwise the new step is
+``\alpha/2``: a proposal outside the interval is replaced, not clamped to it.
+If some trial value is `NaN` or infinite, the step is halved without
+interpolation. Since ``1/2\in[\tau_1,\tau_2]``, every reduction gives a new
+step between 5% and 95% of the previous one.
 
-Section 5 of Assunção, Ferreira and Prudente reports ``c_1=10^{-4}``,
-``\omega_1=0.05`` and ``\omega_2=0.95``, with quadratic interpolation of coordinate
-functions [AFP2025](@cite). Nocedal and Wright also describe halving an
-unsuitable interpolated step, but their procedure continues with cubic models
-after the first quadratic trial [NW2006](@cite). Here every finite reduction
-uses a quadratic model. Selecting the first violating component and the exact
-fallback checks above describe this implementation; the cited sources do not
-specify all these details as one algorithm.
+When ``s_j=\phi_j'(0)``, ``q_j`` and ``\widehat\alpha`` are the quadratic
+interpolant and its minimizer in Nocedal and Wright [NW2006](@cite),
+Section 3.5, equations (3.57) and (3.58). Otherwise ``q_j`` still matches the two
+values and the slope ``s_j``. The slopes only affect the proposed steps; the
+acceptance test uses the objective values and ``\eta``.
+
+Nocedal and Wright continue with cubic interpolation after the first quadratic
+trial, and reset a trial to half its predecessor when it is too close to or
+too much smaller than that predecessor. `BackTracking` uses the quadratic
+model at every reduction of a trial with finite values, with the fixed interval
+above. Choosing the first violating objective and the fallback rules above are
+choices of this implementation; the cited works do not prescribe them.
 
 ## Trial sequence and stopping
 
-1. Evaluate the initial trial ``x+\alpha d``. If it rounds to ``x``, stop
-   without evaluating the objective.
-2. Accept only if every objective is finite and satisfies the common-factor test.
-3. If the reduction budget is exhausted, return `:max_iterations`.
-4. If any trial objective is `NaN` or infinite, halve the step; otherwise use
-   the safeguarded quadratic proposal for the first violating component.
-5. Count the reduction. If the new step is at or below `minstep`, return
-   `:minimum_step` before evaluating it; otherwise repeat.
+Starting from `alpha = initial_step.alpha`:
 
-`max_iters=0` still permits the initial evaluation. An initial step equal to
-`minstep` is evaluated; the threshold applies to subsequent reductions.
-Explicit evaluator errors terminate immediately. Nonfinite trial values,
-rounding checks and finite budgets are numerical safeguards of the package,
-not additional convergence results attributed to the papers.
+1. Form ``x+\alpha d(x)``. If it equals ``x`` in floating-point arithmetic,
+   return `:indistinguishable_point` without evaluating it.
+2. Evaluate the objectives. If the evaluator reports an error, return
+   `:evaluation_failure`.
+3. If all values are finite and satisfy the Armijo-type condition, return
+   `:success`.
+4. If `max_iters` reductions have been made, return `:max_iterations`.
+5. Reduce the step: halve it if some value is not finite, otherwise apply the
+   safeguarded quadratic proposal.
+6. If the new step is at or below `minstep`, return `:minimum_step` without
+   evaluating it. Otherwise go to step 1.
+
+With `max_iters=0`, only the initial step is evaluated. An initial step equal
+to `minstep` is evaluated, since the threshold applies to reduced steps.
+The limits `max_iters` and `minstep`, the rounding check and the handling of
+nonfinite values belong to this implementation; they are not part of the line
+searches of Fliege and Svaiter [FS2000](@cite) or of Assunção, Ferreira and
+Prudente [AFP2025](@cite).
 
 ## Usage
 
-This smooth example needs one quadratic reduction. The slopes are
-``JF(x)d=(-6,-6)`` and the common factor is their maximum.
+Consider ``F=(F_1,F_2):\mathbb{R}\to\mathbb{R}^2`` with
+
+```math
+F_1(x)=(x-1)^2,\qquad F_2(x)=(x-1)^2+1,
+```
+
+the current point ``x=0`` and the direction ``d(x)=3``. Then ``F(0)=(1,2)``
+and ``\nabla F_1(0)=\nabla F_2(0)=-2``, so the slopes are
+``s_i=\nabla F_i(x)^\mathsf{T}d(x)=-6``. The caller passes
+``\eta=\mathcal{D}(x,d(x))=-6``, the choice of Lucambio Pérez and Prudente
+[LPP2018](@cite).
+
+The first trial, ``\alpha=1``, gives ``F(3)=(4,5)`` and is rejected by
+``F_1``. Since ``F_1`` is quadratic and ``s_1=\phi_1'(0)``, the model ``q_1``
+equals ``\phi_1``, and its minimizer ``\widehat\alpha=1/3`` is accepted with
+``F(1)=(0,1)``. In the code, `objectives!` fills `values` with ``F(x)``.
 
 ```jldoctest backtracking_usage
 julia> using MultiObjectiveLineSearches
@@ -211,7 +283,7 @@ julia> (x_trial ≈ [1.0], F_trial ≈ [0.0, 1.0], x == [0.0])
 (true, true, true)
 ```
 
-For evaluator failures and buffer ownership, see [Using a line search](@ref).
+For the evaluator contract and buffer ownership, see [Using a line search](@ref).
 
 ## Method reference
 

@@ -2,12 +2,17 @@
     BackTracking(; initial_step=InitialStatic(), c_1=1e-4, max_iters=1000,
                  minstep=1e-15, maxstep=1.0, verbose=0)
 
-Configure multiobjective Armijo backtracking with quadratic interpolation.
-Requires `0 < c_1 < 1`, finite `0 < minstep < maxstep`, and an initial step
-in `[minstep, maxstep]`. `max_iters` counts reductions; zero allows the initial
-trial only. Set `verbose=1` to print the final diagnostic.
+Backtracking line search for an Armijo-type sufficient decrease condition,
+with safeguarded quadratic interpolation.
 
-See [BackTracking](@ref backtracking) for formulations, defaults and sources.
+[`configure_linesearch`](@ref) checks the options after conversion:
+`0 < c_1 < 1`, finite `0 < minstep < maxstep`, an initial step in
+`[minstep, maxstep]`, `max_iters >= 0` and `verbose` equal to 0 or 1.
+`max_iters` limits the number of step reductions; zero allows only the initial
+trial. Set `verbose=1` to log the final diagnostic with `@info`.
+
+See [BackTracking](@ref backtracking) for the condition, its sources and the
+reduction rules.
 """
 struct BackTracking{I<:InitialStatic,C<:Real,L<:Real,U<:Real} <: AbstractLineSearchMethod
     initial_step::I
@@ -49,8 +54,9 @@ end
     _quadratic_step(alpha, value, slope, value0)
 
 Propose a step from the quadratic matching `value0`, `slope` and `value` at
-`alpha`. Use the proposal only for a negative slope and a finite step in
-`[0.05*alpha, 0.95*alpha]`; otherwise return `alpha/2`.
+`alpha`. Use the proposal only when `slope < 0`, the denominator is finite and
+nonzero, and the proposal is finite and in `[0.05*alpha, 0.95*alpha]`;
+otherwise return `alpha/2`.
 See [Quadratic interpolation and safeguards](@ref quadratic-interpolation).
 """
 function _quadratic_step(alpha::T, value::T, slope::T, value0::T) where {T}
@@ -99,13 +105,16 @@ end
     perform_linesearch!(search::BacktrackingParams, evaluate!, x, d, Fx, slopes,
                         x_trial, F_trial; factor)
 
-Apply Armijo backtracking with the common decrease term `c_1*alpha*factor`.
-`factor` must be finite and negative. `slopes` contains the component slopes
-for quadratic interpolation, independently of `factor`.
+Search for a step `alpha` such that, for every objective `i`, the value at
+`x + alpha*d` is finite and at most `Fx[i] + c_1*alpha*factor`. `factor` must
+be finite and negative. `slopes` holds one slope per objective and is used only
+to propose reduced steps.
 
-Nonfinite trial objectives cause halving. Reported evaluation errors, exhausted
-reductions, a reduced step at or below `minstep`, or a point indistinguishable
-from `x` return failure. Unexpected evaluator exceptions propagate.
+If a trial has a nonfinite value, the step is halved; otherwise a rejected step
+is reduced by safeguarded quadratic interpolation. The search fails when the
+evaluator reports an error, after `max_iters` reductions, when a reduced step
+is at or below `minstep`, or when `x + alpha*d` equals `x`. Evaluator
+exceptions propagate.
 See [BackTracking](@ref backtracking) for the acceptance and reduction rules.
 """
 function perform_linesearch!(search::BacktrackingParams{T}, evaluate!,

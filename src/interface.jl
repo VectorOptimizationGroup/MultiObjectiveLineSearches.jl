@@ -11,8 +11,9 @@ function configure_linesearch end
                         x_trial, F_trial; factor)
 
 Run a configured line search and return a [`LineSearchResult`](@ref).
-On success, the trial buffers hold the accepted point and objectives;
-on failure, the caller retains its previous solution. Inputs are preserved.
+On success, the trial buffers hold the accepted point and objective values;
+on failure, their contents are not an accepted point. The search does not
+modify `x`, `d`, `Fx` or `slopes`.
 See [Using a line search](@ref) for evaluator and buffer requirements.
 """
 function perform_linesearch! end

@@ -1,8 +1,8 @@
 """
-Multiobjective line searches with componentwise sufficient decrease.
+Line searches for multiobjective optimization.
 
-Use `BackTracking` to configure Armijo backtracking and `perform_linesearch!`
-to find a step along a supplied direction.
+Prepare a method such as `BackTracking` with `configure_linesearch`, then call
+`perform_linesearch!` to search for a step size along a given direction.
 """
 module MultiObjectiveLineSearches
 

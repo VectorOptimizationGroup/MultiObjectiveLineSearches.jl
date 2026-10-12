@@ -1,12 +1,13 @@
 # MultiObjectiveLineSearches.jl
 
-MultiObjectiveLineSearches provides line searches for vector-valued objectives.
-Given a point, a direction and objective values, a search chooses a step that
-satisfies sufficient decrease in every objective.
+MultiObjectiveLineSearches provides line searches for multiobjective
+optimization. Given a point, a search direction and the objective values at
+the point, a line search looks for a step size along the direction that
+satisfies an acceptance condition on all objectives.
 
-The available method is [`BackTracking`](@ref), an Armijo search with
-safeguarded quadratic interpolation. It supports smooth and composite
-objectives through a user-supplied decrease factor.
+The available method is [`BackTracking`](@ref): backtracking for an
+Armijo-type sufficient decrease condition, with safeguarded quadratic
+interpolation.
 
 ## Contents
 

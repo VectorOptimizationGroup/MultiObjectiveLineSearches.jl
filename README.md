@@ -1,8 +1,10 @@
 # MultiObjectiveLineSearches.jl
 
 MultiObjectiveLineSearches.jl provides line searches for multiobjective
-optimization. Given a point, a search direction and the objective values, a
-search chooses a step that satisfies sufficient decrease in every objective.
+optimization. Given a point, a search direction and the objective values at
+the point, a line search looks for a step size along the direction that
+satisfies an acceptance condition on all objectives. The available method,
+`BackTracking`, uses an Armijo-type sufficient decrease condition.
 The package has no runtime dependencies and requires Julia 1.11 or later.
 
 ## Installation
@@ -33,7 +35,7 @@ x_trial = similar(x); F_trial = similar(Fx)
 
 result = perform_linesearch!(search, objectives!, x, d, Fx, slopes,
                              x_trial, F_trial; factor = maximum(slopes))
-result.success  # true; x_trial and F_trial hold the accepted point
+result.success  # true; x_trial and F_trial hold the accepted point and values
 ```
 
 ## Documentation
