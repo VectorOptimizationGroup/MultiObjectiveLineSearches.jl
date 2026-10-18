@@ -1,61 +1,68 @@
 # Using a line search
 
-A solver chooses the direction and supplies the objective values at its current
-point. The line search evaluates trial points and returns a step plus a
-diagnostic. See [BackTracking](@ref backtracking) for the mathematical test and
-a complete executable example.
+Prepare once, then reuse the search with new iteration data:
 
-## Configure once, reuse across iterations
+```julia
+search = configure_linesearch(spec, evaluate!, x, Fx)
+result = perform_linesearch!(search, x, d, Fx; maxstep=Inf, method_data...)
+```
 
-Create a [`BackTracking`](@ref) specification and call
-[`configure_linesearch`](@ref) with the element type of the solver's vectors.
-The returned configuration is reusable. [`InitialStatic`](@ref) starts every
-search at its configured step; it does not remember the previous accepted step.
+See [Quick Start](@ref) for a complete example and
+[Extending the protocol](@ref) for derivative callbacks and new methods.
 
-Allocate `x_trial = similar(x)` and `F_trial = similar(Fx)` once and reuse them.
-They must not share storage with each other or with any input vector, including
-through views.
+## Preparation and inputs
 
-## Supply the evaluation and directional data
+Preparation converts fixed options to `T = eltype(x)` and allocates independent
+work buffers without calling the evaluator. `T` must be a concrete floating
+type, `eltype(Fx) === T`, and both prototypes must be finite and nonempty.
+Mixed types raise `ArgumentError`; there is no automatic promotion.
 
-The evaluator has the form `evaluate!(F_trial, x_trial)`. It must fill every
-component of `F_trial`, must not modify `x_trial` or the input vectors, and
-must return:
+Reuse with matching axes/types. Changes to dimensions, type, problem or callback
+capabilities require a new preparation. Do not modify prepared storage or share
+one prepared object across concurrent calls. Captured callback state remains
+the caller's responsibility; keep BigFloat precision/rounding fixed during a run.
 
-- `nothing` after a completed evaluation;
-- an error message when it explicitly reports an evaluation failure.
+BackTracking requires these iteration inputs:
 
-An exception from the evaluator propagates. A `NaN` or infinite value
-returned with `nothing` is not an error: the trial is rejected, and
-BackTracking halves the step if its limits allow another trial. Returning
-anything other than `nothing` or a string raises `ArgumentError`.
+| Input | Requirement |
+| --- | --- |
+| `x`, `d` | Finite point and direction, with prepared point axes/type |
+| `Fx` | Finite objectives at `x`, with prepared value axes/type |
+| `slopes` | Finite vector with objective axes/type; used only for interpolation |
+| `factor` | Real scalar, finite and negative after conversion; controls acceptance |
+| `maxstep` | Nonnegative real bound; `Inf` adds no restriction |
 
-| Argument | Content |
-|:---|:---|
-| `x`, `d` | Current point and direction |
-| `Fx` | All objectives evaluated at `x` |
-| `slopes` | One slope per objective, used only to propose reduced steps |
-| `factor` | Finite, negative scalar in the acceptance condition |
-| `x_trial`, `F_trial` | Writable trial point and objective buffers |
+New data are validated each call; fixed options and buffers are reused.
+Inputs may alias each other but must not alias prepared outputs, including
+through views. Invalid axes raise `DimensionMismatch`; invalid types, values
+or aliasing raise `ArgumentError`. The search trusts `Fx` and the mathematical
+meaning of `slopes`/`factor`; it computes no derivatives.
 
-All six vectors must have the configured element type. The axes of `x`, `d`
-and `x_trial` must match; those of `Fx`, `slopes` and `F_trial` must also match.
-`x`, `d`, `Fx` and `slopes` must be nonempty and contain only finite values. Dimension mismatches raise
-`DimensionMismatch`; invalid values, element types or storage overlap raise
-`ArgumentError` before any evaluation. `factor` is converted to the configured
-type and must remain finite and negative.
+## Evaluator
 
-`factor` enters the acceptance condition; `slopes` are used only to propose
-reduced steps. The search computes no derivatives and does not check how these
-numbers were obtained: their meaning is set by the calling method. See
-[Armijo-type conditions in the literature](@ref armijo-literature) for choices
-made in the cited works.
+`evaluate!(F, y)` overwrites all objective values without modifying `y` or
+captured inputs. Return `nothing` on completion or an `AbstractString` on
+failure; other returns raise `ArgumentError`, and exceptions propagate.
 
-## Consume the result
+Nonfinite values returned with `nothing` cause BackTracking to reject and halve
+the step if limits allow. Trial-point overflow can reach the evaluator: restrict
+the domain or report failure if the evaluator requires finite points.
 
-If `result.success` is true, the two trial buffers hold the accepted point and
-objective values, and the caller can copy them into its current state. The
-example uses the problem of the [Quick Start](@ref):
+## Step limit
+
+The per-call `maxstep` is converted without rounding above the requested bound.
+Zero is valid; negative, NaN or non-real bounds raise `ArgumentError`.
+BackTracking starts at the smaller of its initial step and this bound.
+A bound below `minstep` returns `:step_limit` without evaluation; equality
+permits the initial trial. See [Trial sequence and stopping](@ref) for subsequent
+reductions and termination reasons.
+
+## Results and failure
+
+On success, advance the consumer using `result.x_trial` and `result.F_trial`.
+These arrays borrow reusable buffers: copy them before the next call, and never
+use them as inputs or modify them through a retained result. Scalar diagnostics
+remain valid; retained arrays are not snapshots.
 
 ```jldoctest usage
 julia> using MultiObjectiveLineSearches
@@ -68,56 +75,54 @@ julia> function objectives!(values, x)
 
 julia> x = [0.0]; d = [3.0]; Fx = [1.0, 2.0]; slopes = [-6.0, -6.0];
 
-julia> search = configure_linesearch(BackTracking(), Float64);
+julia> search = configure_linesearch(BackTracking(), objectives!, x, Fx);
 
-julia> x_trial = similar(x); F_trial = similar(Fx);
-
-julia> result = perform_linesearch!(search, objectives!, x, d, Fx, slopes,
-                                  x_trial, F_trial; factor = maximum(slopes));
+julia> result = perform_linesearch!(search, x, d, Fx; slopes, factor=-6.0);
 
 julia> if result.success
-           copyto!(x, x_trial)
-           copyto!(Fx, F_trial)
+           copyto!(x, result.x_trial)
+           copyto!(Fx, result.F_trial)
        end;
 
 julia> x, Fx
 ([1.0], [0.0, 1.0])
+
+julia> bounded = perform_linesearch!(search, x, d, Fx;
+                                   slopes, factor=-6.0, maxstep=0);
+
+julia> bounded.success, bounded.reason, bounded.alpha, bounded.nfev
+(false, :step_limit, 0.0, 0)
 ```
 
-An evaluator that cannot evaluate a trial point returns a message. The search
-stops, and the caller keeps its current state:
+Failure leaves the consumer's accepted state unchanged. Result arrays are
+scratch and `alpha` is a diagnostic candidate, possibly unevaluated or zero.
+The consumer decides how to handle termination; [`LineSearchResult`](@ref)
+describes its fields and counters. BackTracking has `ndev == 0`.
+
+To change the evaluator, prepare again:
 
 ```jldoctest usage
-julia> failing!(values, x) = "objective undefined at the trial point";
+julia> failing!(values, y) = "objective undefined at the trial point";
 
-julia> result = perform_linesearch!(search, failing!, x, d, Fx, slopes,
-                                  x_trial, F_trial; factor = maximum(slopes));
+julia> failed_search = configure_linesearch(BackTracking(), failing!, x, Fx);
 
-julia> result.success, result.reason, result.nfev
+julia> failed = perform_linesearch!(failed_search, x, d, Fx; slopes, factor=-6.0);
+
+julia> failed.success, failed.reason, failed.nfev
 (false, :evaluation_failure, 1)
 
-julia> result.message
+julia> failed.message
 "objective undefined at the trial point"
 
 julia> x, Fx
 ([1.0], [0.0, 1.0])
 ```
 
-On failure, trial buffers are scratch data and do not represent a new accepted
-solution. BackTracking does not modify `x`, `d`, `Fx` or `slopes`. To retain an
-accepted point in a history, copy it before the buffers are reused. [`LineSearchResult`](@ref) contains
-scalar diagnostics, not copies of the objective or point vectors.
+## Acceptance and history
 
-| `reason` | Meaning |
-|:---|:---|
-| `:success` | All objectives satisfy the acceptance condition |
-| `:max_iterations` | The last trial was rejected after `max_iters` reductions |
-| `:minimum_step` | A reduced step is at or below `minstep`; it was not evaluated |
-| `:evaluation_failure` | The evaluator returned an error message |
-| `:indistinguishable_point` | `x + alpha*d` equals `x` in floating point; not evaluated |
-
-`alpha` is an accepted step only on success. Otherwise it is the last candidate,
-possibly not evaluated. `nfev` counts actual evaluator calls, including a call
-that reports an error; `iterations` counts reductions. The initial trial uses
-zero reductions. The solver determines how a failed search affects its own
-termination.
+Success commits acceptance. If the consumer vetoes it, discard that prepared
+execution before continuing. Methods with history copy the initial seed, require
+each call to start at the last committed point/values, and commit once per
+success. Rejected trials, failures and exceptions do not commit history;
+callback side effects and scratch storage need not roll back.
+BackTracking carries no history and performs no continuity checks.

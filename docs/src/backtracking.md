@@ -38,7 +38,10 @@ choices made in the cited works.
 checks that ``0<c_1<1``, that ``0<\tau_1\leq1/2\leq\tau_2<1``, that
 `minstep`, `maxstep` and the initial step are finite, that
 `0 < minstep < maxstep`, and that `minstep <= initial_step.alpha <= maxstep`.
-Steps only decrease during a search, so no trial step exceeds `maxstep`.
+Preparation uses the initial `x`/`Fx` prototypes to infer `T` and allocates
+independent point/value buffers with the evaluator stored in the prepared object.
+Steps only decrease during a search, so no trial step exceeds the fixed `maxstep`
+or the additional per-call consumer bound. See [Using a line search](@ref).
 
 ## [Armijo-type condition](@id armijo-condition)
 
@@ -222,7 +225,11 @@ choices of this implementation; the cited works do not prescribe them.
 
 ## Trial sequence and stopping
 
-Starting from `alpha = initial_step.alpha`:
+The consumer may pass a nonnegative `maxstep` to each execution (`Inf` by
+default). Convert it conservatively and intersect it with the fixed method
+bounds. If the resulting upper bound is below `minstep`, return `:step_limit`
+without evaluation. Otherwise start at the smaller of `initial_step.alpha` and
+the consumer bound:
 
 1. Form ``x+\alpha d(x)``. If it equals ``x`` in floating-point arithmetic,
    return `:indistinguishable_point` without evaluating it.
@@ -236,7 +243,7 @@ Starting from `alpha = initial_step.alpha`:
 6. If the new step is at or below `minstep`, return `:minimum_step` without
    evaluating it. Otherwise go to step 1.
 
-With `max_iters=0`, only the initial step is evaluated. An initial step equal
+With `max_iters=0`, only the initial step can be evaluated. An initial step equal
 to `minstep` is evaluated, since the threshold applies to reduced steps.
 The limits `max_iters` and `minstep`, the rounding check and the handling of
 nonfinite values belong to this implementation; they are not part of the line
@@ -273,25 +280,26 @@ julia> function objectives!(values, x)
 
 julia> x = [0.0]; d = [3.0]; Fx = [1.0, 2.0]; slopes = [-6.0, -6.0];
 
-julia> search = configure_linesearch(BackTracking(), Float64);
+julia> search = configure_linesearch(BackTracking(), objectives!, x, Fx);
 
-julia> x_trial = similar(x); F_trial = similar(Fx);
-
-julia> result = perform_linesearch!(search, objectives!, x, d, Fx, slopes,
-                                  x_trial, F_trial; factor=maximum(slopes));
+julia> result = perform_linesearch!(search, x, d, Fx; slopes, factor=maximum(slopes));
 
 julia> (result.success, result.nfev, result.iterations, result.alpha ≈ 1/3)
 (true, 2, 1, true)
 
-julia> (x_trial ≈ [1.0], F_trial ≈ [0.0, 1.0], x == [0.0])
+julia> (result.x_trial ≈ [1.0], result.F_trial ≈ [0.0, 1.0], x == [0.0])
 (true, true, true)
+
+julia> copyto!(x, result.x_trial); copyto!(Fx, result.F_trial);
 ```
 
 For the evaluator contract and buffer ownership, see [Using a line search](@ref).
+
+Execution signatures and borrowed-result semantics are documented under
+[`perform_linesearch!`](@ref) in the [API Reference](@ref).
 
 ## Method reference
 
 ```@docs
 MultiObjectiveLineSearches.BackTracking
-MultiObjectiveLineSearches.perform_linesearch!
 ```

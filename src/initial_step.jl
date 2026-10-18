@@ -1,7 +1,8 @@
 """
     InitialStatic(; alpha=1.0)
 
-Start every search at the same positive, finite step `alpha`.
+Propose the same positive, finite step `alpha` on every search. A per-call
+consumer bound may restrict that initial trial; no previous step is remembered.
 """
 struct InitialStatic{T<:Real}
     alpha::T

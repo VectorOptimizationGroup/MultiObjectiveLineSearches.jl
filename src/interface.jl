@@ -1,19 +1,27 @@
 """
-    configure_linesearch(spec, ::Type{T}) where T<:AbstractFloat
+    configure_linesearch(spec, evaluate!, x::AbstractVector, Fx::AbstractVector;
+                         derivative! = nothing, value_derivative! = nothing)
 
-Prepare a line search for vectors with element type `T`. Reuse the returned
-configuration across iterations. Invalid options raise `ArgumentError`.
+Prepare reusable method state and work buffers without evaluating objectives.
+Fixed options are converted to `T = eltype(x)`; `eltype(Fx)` must equal `T`,
+a concrete floating type. Both prototypes must be finite and nonempty.
+
+`evaluate!(F, y)` fills objective values and returns `nothing` or an error
+string. Optional derivative callbacks are described in [Extending the protocol](@ref).
+See [Using a line search](@ref) for reuse and input requirements.
 """
 function configure_linesearch end
 
 """
-    perform_linesearch!(search, evaluate!, x, d, Fx, slopes,
-                        x_trial, F_trial; factor)
+    perform_linesearch!(search, x::AbstractVector, d::AbstractVector,
+                        Fx::AbstractVector; maxstep=Inf, method_data...)
 
-Run a configured line search and return a [`LineSearchResult`](@ref).
-On success, the trial buffers hold the accepted point and objective values;
-on failure, their contents are not an accepted point. The search does not
-modify `x`, `d`, `Fx` or `slopes`.
-See [Using a line search](@ref) for evaluator and buffer requirements.
+Run a prepared search and return a [`LineSearchResult`](@ref).
+`maxstep` is a nonnegative upper bound on the step (`Inf` adds no restriction);
+other keywords depend on the method.
+
+On success, copy the borrowed result arrays into the consumer state before
+another call. Inputs must not alias those buffers. See [Using a line search](@ref)
+for validation, acceptance and failure handling.
 """
 function perform_linesearch! end

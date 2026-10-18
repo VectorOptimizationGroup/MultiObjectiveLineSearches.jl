@@ -1,8 +1,7 @@
 """
-Line searches for multiobjective optimization.
-
-Prepare a method such as `BackTracking` with `configure_linesearch`, then call
-`perform_linesearch!` to search for a step size along a given direction.
+Multiobjective line searches with reusable preparation and in-place execution.
+See [`configure_linesearch`](@ref), [`perform_linesearch!`](@ref) and
+[`BackTracking`](@ref).
 """
 module MultiObjectiveLineSearches
 

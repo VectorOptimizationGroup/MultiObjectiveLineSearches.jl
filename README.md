@@ -4,12 +4,9 @@
 [![CI](https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/VectorOptimizationGroup/MultiObjectiveLineSearches.jl/graph/badge.svg?branch=main)](https://codecov.io/gh/VectorOptimizationGroup/MultiObjectiveLineSearches.jl)
 
-MultiObjectiveLineSearches.jl provides line searches for multiobjective
-optimization. Given a point, a search direction and the objective values at
-the point, a line search looks for a step size along the direction that
-satisfies an acceptance condition on all objectives. The available method,
-`BackTracking`, uses an Armijo-type sufficient decrease condition.
-The package has no runtime dependencies and requires Julia 1.11 or later.
+Multiobjective line searches with reusable preparation and in-place execution.
+`BackTracking` implements an Armijo-type decrease condition with safeguarded
+quadratic interpolation. Requires Julia 1.11 or later; no runtime dependencies.
 
 ## Installation
 
@@ -36,13 +33,18 @@ end
 
 x = [0.0]; d = [3.0]; Fx = [1.0, 2.0]; slopes = [-6.0, -6.0]
 
-search = configure_linesearch(BackTracking(), Float64)
-x_trial = similar(x); F_trial = similar(Fx)
-
-result = perform_linesearch!(search, objectives!, x, d, Fx, slopes,
-                             x_trial, F_trial; factor = maximum(slopes))
-result.success  # true; x_trial and F_trial hold the accepted point and values
+search = configure_linesearch(BackTracking(), objectives!, x, Fx)
+result = perform_linesearch!(search, x, d, Fx;
+                             slopes, factor=maximum(slopes), maxstep=1)
+if result.success
+    copyto!(x, result.x_trial)
+    copyto!(Fx, result.F_trial)
+end
+# x == [1.0], Fx == [0.0, 1.0]
 ```
+
+Prepare once and reuse `search`. Copy accepted results before the next call:
+their arrays borrow reusable work buffers.
 
 ## Documentation
 
@@ -57,17 +59,6 @@ Run the tests from the package directory:
 ```sh
 julia --project -e 'using Pkg; Pkg.test()'
 ```
-
-## Highlights
-
-- Backtracking for an Armijo-type sufficient decrease condition in every
-  objective, with safeguarded quadratic interpolation.
-- Typed, reusable configurations and in-place searches with caller-owned
-  buffers.
-- Structured diagnostics: step, termination reason, evaluation and reduction
-  counts.
-- Formulations related to the multiobjective literature, with executable
-  examples.
 
 ## Citation
 

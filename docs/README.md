@@ -1,23 +1,23 @@
-# MultiObjectiveLineSearches.jl Documentation
+# Building the documentation
 
-The Documenter.jl source lives in `docs/src/`.
-
-To build the local HTML documentation from the repository root:
+From the repository root:
 
 ```bash
 julia --project=docs -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'
 julia --project=docs docs/make.jl
 ```
 
-The generated site is written to `docs/build/index.html`.
+The build checks exported docstrings and runs doctests, then writes
+`docs/build/index.html`. Extension examples use `test/protocol_fixtures.jl`
+from this checkout. Local builds skip deployment.
 
-To browse it through a local server:
+Use the same Julia executable for setup and build. When testing another minor
+version, resolve a separate docs environment instead of reusing its manifest.
+
+To serve the generated site with LiveServer installed:
 
 ```bash
 julia -e 'using LiveServer; serve(dir="docs/build")'
 ```
 
-Then open `http://localhost:8000/`.
-
-The build runs every `jldoctest` block and fails if an example errors or its
-output differs from the documented one.
+Open `http://localhost:8000/`.

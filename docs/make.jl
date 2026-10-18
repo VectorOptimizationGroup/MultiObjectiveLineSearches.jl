@@ -24,6 +24,7 @@ makedocs(
         ],
         "Guides" => [
             "Using a line search" => "guides/usage.md",
+            "Extending the protocol" => "guides/extending.md",
         ],
         "Line Searches" => [
             "BackTracking" => "backtracking.md",

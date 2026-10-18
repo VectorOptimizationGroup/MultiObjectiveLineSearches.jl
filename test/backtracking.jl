@@ -1,9 +1,8 @@
 function search_case(T, evaluator; x=T[0], d=T[1], Fx=T[0, 0], slopes=T[-1, -1],
                      factor=-one(T), options=BackTracking())
-    y, Fy = similar(x), similar(Fx)
-    result = perform_linesearch!(configure_linesearch(options, T), evaluator,
-                                 x, d, Fx, slopes, y, Fy; factor)
-    return result, y, Fy
+    search = configure_linesearch(options, evaluator, x, Fx)
+    result = perform_linesearch!(search, x, d, Fx; slopes, factor)
+    return result, result.x_trial, result.F_trial
 end
 
 struct DecreasingObjectives end
@@ -119,56 +118,69 @@ end
 @testset "State, buffers and verbosity ($T)" for T in (Float32,Float64)
     x,d,Fx,slopes = T[0],T[1],T[0,0],T[-1,-1]
     original = map(copy,(x,d,Fx,slopes))
-    y,F = similar(x),similar(Fx)
-    search=configure_linesearch(BackTracking(),T)
-    r=@inferred perform_linesearch!(search,DecreasingObjectives(),x,d,Fx,slopes,y,F;factor=-one(T))
+    fail = Ref(false)
+    evaluator = (F,y) -> fail[] ? (fill!(F,T(NaN)); "stop") : DecreasingObjectives()(F,y)
+    search = @inferred configure_linesearch(BackTracking(), evaluator, x, Fx)
+    r = @inferred perform_linesearch!(search,x,d,Fx;slopes,factor=-one(T))
+    y,F = r.x_trial,r.F_trial
     @test r.success && r.nfev == 1 && r.iterations == 0
+    @test r.ndev == 0
     @test y == T[1] && F == T[-1,-1]
     @test (x,d,Fx,slopes)==original
     snapshot=copy(F)
-    r2=perform_linesearch!(search,(F,y)->(fill!(F,T(NaN));"stop"),x,d,Fx,slopes,y,F;factor=-one(T))
-    @test !r2.success && (x,d,Fx,slopes)==original
+    copyto!(x,y)
+    copyto!(Fx,F)
+    accepted = map(copy,(x,d,Fx,slopes))
+    fail[] = true
+    r2=perform_linesearch!(search,x,d,Fx;slopes,factor=-one(T))
+    @test !r2.success && (x,d,Fx,slopes)==accepted
     @test snapshot == T[-1,-1] && r.alpha == one(T)
-    r3=perform_linesearch!(search,DecreasingObjectives(),x,d,Fx,slopes,y,F;factor=-one(T))
-    @test r3 == r && F == snapshot
-    noisy=configure_linesearch(BackTracking(verbose=1),T)
+    @test r2.x_trial === y && r2.F_trial === F && all(isnan, r.F_trial)
+    fail[] = false
+    r3=perform_linesearch!(search,x,d,Fx;slopes,factor=-one(T))
+    @test r3 == r && F == snapshot .- one(T)
+    copyto!(x,y)
+    copyto!(Fx,F)
+    noisy=configure_linesearch(BackTracking(verbose=1),evaluator,x,Fx)
     @test_logs (:info,"BackTracking finished") begin
-        r4=perform_linesearch!(noisy,DecreasingObjectives(),x,d,Fx,slopes,y,F;factor=-one(T))
-        @test r4 == r
+        r4=perform_linesearch!(noisy,x,d,Fx;slopes,factor=-one(T))
+        @test (r4.success,r4.alpha,r4.reason,r4.nfev,r4.iterations) ==
+              (r.success,r.alpha,r.reason,r.nfev,r.iterations)
     end
 end
 
 @testset "Invalid inputs before evaluation ($T)" for T in (Float32,Float64)
     calls=Ref(0)
     evaluator=(F,y)->(calls[]+=1;fill!(F,zero(T));nothing)
-    search=configure_linesearch(BackTracking(),T)
-    function check(args...;factor=-one(T), error=ArgumentError)
-        @test_throws error perform_linesearch!(search,evaluator,args...;factor)
+    x,d,F,s = T[0],T[1],T[0,0],T[-1,-1]
+    search=configure_linesearch(BackTracking(),evaluator,x,F)
+    function check(x,d,F,s;factor=-one(T), error=ArgumentError)
+        @test_throws error perform_linesearch!(search,x,d,F;slopes=s,factor)
         @test calls[] == 0
     end
-    x,d,F,s = T[0],T[1],T[0,0],T[-1,-1]
-    y,Fy=similar(x),similar(F)
     for factor in (0,1,Inf,-Inf,NaN,"invalid")
-        check(x,d,F,s,y,Fy;factor)
+        check(x,d,F,s;factor)
     end
-    check(T[],T[],F,s,T[],Fy)
-    check(x,d,T[],T[],y,T[])
-    check(x,T[1,2],F,s,y,Fy;error=DimensionMismatch)
-    check(x,d,F,T[-1],y,Fy;error=DimensionMismatch)
-    check(x,d,F,s,T[0,0],Fy;error=DimensionMismatch)
-    check(x,d,F,s,y,T[0];error=DimensionMismatch)
-    check(x,d,F,s,zeros(Int,1),Fy)
+    check(T[],T[],F,s)
+    check(x,d,T[],T[])
+    check(x,T[1,2],F,s;error=DimensionMismatch)
+    check(x,d,F,T[-1];error=DimensionMismatch)
+    check(T[0,0],T[1,1],F,s;error=DimensionMismatch)
+    check(x,d,T[0],T[-1];error=DimensionMismatch)
+    check(zeros(Int,1),d,F,s)
+    check(x,d,F,42)
     for k in 1:4
         arrays=map(copy,(x,d,F,s)); arrays[k][1]=T(NaN)
-        check(arrays...,y,Fy)
+        check(arrays...)
     end
-    # Use equal lengths to isolate each alias rejection from dimensional checks.
-    inputs=[T[0,0],T[1,1],T[0,0],T[-1,-1]]
-    for input in inputs
-        check(inputs...,view(input,:),zeros(T,2))
-        check(inputs...,zeros(T,2),view(input,:))
+    # Prepared outputs cannot be passed back as inputs, even through views.
+    for aliased in (search.x_trial,view(search.x_trial,:))
+        check(aliased,d,F,s)
+        check(x,aliased,F,s)
     end
-    buffer=zeros(T,2)
-    check(inputs...,buffer,view(buffer,:))
-    T===Float32 && check(x,d,F,s,y,Fy;factor=-1e-100)
+    for aliased in (search.F_trial,view(search.F_trial,:))
+        check(x,d,aliased,s)
+        check(x,d,F,aliased)
+    end
+    T===Float32 && check(x,d,F,s;factor=-1e-100)
 end
