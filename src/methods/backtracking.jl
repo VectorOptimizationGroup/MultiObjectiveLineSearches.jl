@@ -127,12 +127,7 @@ function _step_limit(::Type{T}, limit) where {T}
     limit isa Real && !isnan(limit) && limit >= 0 ||
         throw(ArgumentError("maxstep must be a nonnegative real number or +Inf"))
     isinf(limit) && return T(Inf)
-    converted = try
-        T(limit)
-    catch err
-        err isa Union{InexactError,MethodError,OverflowError,DomainError} || rethrow()
-        throw(ArgumentError("maxstep cannot be converted to $T"))
-    end
+    converted = T(limit)
     # Respect the original bound even if conversion rounds upward or overflows.
     return converted > limit ? prevfloat(converted) : converted
 end
