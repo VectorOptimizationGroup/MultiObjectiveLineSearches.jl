@@ -5,7 +5,7 @@
 Armijo-type backtracking with safeguarded quadratic interpolation.
 `max_iters` counts reductions; `verbose=1` logs the final diagnostic.
 Prepare with [`configure_linesearch`](@ref) and supply `slopes` and `factor`
-to each execution.
+to each execution; `reference` and `alpha0` are optional per call.
 
 See [BackTracking](@ref backtracking) for options, admissible ranges,
 acceptance and reduction rules, and literature sources.
@@ -116,12 +116,62 @@ function _validate_inputs(::Type{T}, x, d, Fx, slopes, x_trial, F_trial, factor)
         Base.mightalias(buffer, input) && throw(ArgumentError("trial buffers must not alias inputs"))
     end
     all(v -> all(isfinite, v), inputs) || throw(ArgumentError("initial inputs must be finite"))
-    factor isa Real || throw(ArgumentError("factor must be real"))
+    return _validate_factor(T, factor, Fx, buffers)
+end
+
+function _validate_factor(::Type{T}, factor::Real, Fx, buffers) where {T}
     typed_factor = T(factor)
     isfinite(typed_factor) && typed_factor < zero(T) ||
         throw(ArgumentError("factor must be finite and negative after conversion"))
     return typed_factor
 end
+
+function _validate_factor(::Type{T}, factor::AbstractVector, Fx, buffers) where {T}
+    eltype(factor) === T || throw(ArgumentError("factor vector must have the configured element type $T"))
+    axes(factor) == axes(Fx) || throw(DimensionMismatch("factor and objective axes must match"))
+    for buffer in buffers
+        Base.mightalias(buffer, factor) && throw(ArgumentError("trial buffers must not alias factor"))
+    end
+    all(v -> isfinite(v) && v < zero(T), factor) ||
+        throw(ArgumentError("factor entries must be finite and negative"))
+    return factor
+end
+
+_validate_factor(::Type, factor, Fx, buffers) =
+    throw(ArgumentError("factor must be a real number or a vector"))
+
+@inline _factor_at(factor::Real, i) = factor
+@inline _factor_at(factor::AbstractVector, i) = factor[i]
+
+_validate_reference(::Type, ::Nothing, Fx, buffers) = Fx
+
+function _validate_reference(::Type{T}, reference::AbstractVector, Fx, buffers) where {T}
+    eltype(reference) === T ||
+        throw(ArgumentError("reference must have the configured element type $T"))
+    axes(reference) == axes(Fx) || throw(DimensionMismatch("reference and objective axes must match"))
+    for buffer in buffers
+        Base.mightalias(buffer, reference) && throw(ArgumentError("trial buffers must not alias reference"))
+    end
+    for i in eachindex(Fx)
+        isfinite(reference[i]) && reference[i] >= Fx[i] ||
+            throw(ArgumentError("reference must be finite and at least Fx in every component"))
+    end
+    return reference
+end
+
+_validate_reference(::Type, reference, Fx, buffers) =
+    throw(ArgumentError("reference must be nothing or a vector"))
+
+_initial_step(::Type, options, ::Nothing) = options.initial_step.alpha
+
+function _initial_step(::Type{T}, options, alpha0::Real) where {T}
+    alpha = T(alpha0)
+    isfinite(alpha) && options.minstep <= alpha <= options.maxstep ||
+        throw(ArgumentError("alpha0 must be finite and in [minstep, maxstep] after conversion"))
+    return alpha
+end
+
+_initial_step(::Type, options, alpha0) = throw(ArgumentError("alpha0 must be nothing or a real number"))
 
 function _step_limit(::Type{T}, limit) where {T}
     limit isa Real && !isnan(limit) && limit >= 0 ||
@@ -142,30 +192,37 @@ end
 
 """
     perform_linesearch!(search::PreparedBackTracking, x, d, Fx;
-                        slopes, factor, maxstep=Inf)
+                        slopes, factor, maxstep=Inf, reference=nothing, alpha0=nothing)
 
 Accept a step when every trial value is finite and at most
-`Fx[i] + c_1*alpha*factor`. `factor` must be finite and negative;
-`slopes` supplies one finite slope per objective for interpolation only.
+`R[i] + c_1*alpha*η_i`, where `R = reference` (default `Fx`) and `η_i` is
+`factor` if it is a scalar or `factor[i]` if it is a vector; every `η_i` must be
+finite and negative. A `reference` must be finite and at least `Fx` in every
+component. `slopes` supplies one finite slope per objective for interpolation
+only; interpolation uses `Fx`, not `reference`.
 
-`maxstep` further bounds the initial trial. A bound below `minstep` returns
-`:step_limit` without evaluation. See [BackTracking](@ref backtracking) for
-reduction and stopping rules.
+`alpha0` replaces the configured initial step for this call and must lie in
+`[minstep, maxstep]`. `maxstep` further bounds the initial trial. A bound below
+`minstep` returns `:step_limit` without evaluation. See
+[BackTracking](@ref backtracking) for reduction and stopping rules.
 """
 function perform_linesearch!(search::PreparedBackTracking{T},
                              x::AbstractVector, d::AbstractVector,
-                             Fx::AbstractVector; slopes, factor, maxstep=Inf) where {T}
+                             Fx::AbstractVector; slopes, factor, maxstep=Inf,
+                             reference=nothing, alpha0=nothing) where {T}
     options = search.options
     x_trial, F_trial = search.x_trial, search.F_trial
     factor_T = _validate_inputs(T, x, d, Fx, slopes, x_trial, F_trial, factor)
+    reference_T = _validate_reference(T, reference, Fx, (x_trial, F_trial))
+    initial = _initial_step(T, options, alpha0)
     limit = _step_limit(T, maxstep)
-    # Preparation guarantees minstep <= initial alpha <= the fixed maxstep.
+    # Preparation and _initial_step guarantee minstep <= initial <= the fixed maxstep.
     # Only the consumer bound can further restrict this initial trial/domain.
     if limit < options.minstep
         return _finish(search, limit, :step_limit,
                        "The consumer step limit is below the minimum", 0, 0)
     end
-    alpha = min(options.initial_step.alpha, limit)
+    alpha = min(initial, limit)
     nfev = 0
     iterations = 0
     while true
@@ -183,9 +240,9 @@ function perform_linesearch!(search::PreparedBackTracking{T},
         end
 
         failed = nothing
-        decrease = options.c_1 * alpha * factor_T
+        scale = options.c_1 * alpha
         for i in eachindex(Fx)
-            if !isfinite(F_trial[i]) || !(F_trial[i] <= Fx[i] + decrease)
+            if !isfinite(F_trial[i]) || !(F_trial[i] <= reference_T[i] + scale * _factor_at(factor_T, i))
                 failed = i
                 break
             end

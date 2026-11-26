@@ -15,9 +15,11 @@ Along ``d(x)``, write
 ```
 
 `BackTracking` uses only the values ``\phi_i(\alpha)`` returned by the caller's
-evaluator at trial steps, together with two inputs from the caller: a scalar
-decrease factor ``\eta<0`` (`factor`) and one slope ``s_i`` per objective
-(`slopes`). It computes no derivatives and makes no assumption about ``F``,
+evaluator at trial steps, together with two inputs from the caller: a decrease
+factor (`factor`), either one scalar ``\eta<0`` or one value ``\eta_i<0`` per
+objective, and one slope ``s_i`` per objective (`slopes`). Two optional inputs
+change a single execution: a reference vector ``R`` (`reference`) for
+nonmonotone searches and an initial step (`alpha0`). It computes no derivatives and makes no assumption about ``F``,
 such as differentiability or convexity. The meaning of ``\eta`` and ``s_i`` is
 set by the method that calls the search;
 [Armijo-type conditions in the literature](@ref armijo-literature) shows the
@@ -49,10 +51,13 @@ or the additional per-call consumer bound. See [Using a line search](@ref).
 and
 
 ```math
-F_i(x+\alpha d(x))\leq F_i(x)+c_1\alpha\eta,\qquad i=1,\ldots,m.
+F_i(x+\alpha d(x))\leq R_i+c_1\alpha\eta_i,\qquad i=1,\ldots,m,
 ```
 
-The same term ``c_1\alpha\eta`` is used for all objectives. For ``m=1`` and
+where ``\eta_i=\eta`` for a scalar `factor` and ``\eta_i`` is the ``i``-th entry
+of a vector `factor`. By default ``R=F(x)``, the monotone case. A `reference`
+must be finite and satisfy ``R_i\geq F_i(x)`` for every ``i``; see
+[Nonmonotone reference](@ref nonmonotone-reference). For ``m=1``, ``R=F(x)`` and
 ``\eta=\nabla F_1(x)^\mathsf{T}d(x)``, this is the Armijo condition of scalar
 optimization; see Nocedal and Wright [NW2006](@cite), equation (3.4).
 
@@ -100,10 +105,12 @@ until (7) holds. Their Lemma 4 shows that (7) holds strictly for all
 sufficiently small ``\alpha>0``.
 
 Each objective has its own slope ``s_i=\nabla F_i(x)^\mathsf{T}d(x)`` on the
-right-hand side. `BackTracking` does not implement this rule, since it uses one
-scalar ``\eta`` for all objectives. With ``\eta=\mathcal{D}(x,d(x))`` we have
-``s_i\leq\eta``, so (7) implies the `BackTracking` condition; the converse does
-not hold in general.
+right-hand side. This is the `BackTracking` condition with the vector
+`factor = slopes`; with `tau_1 = tau_2 = 0.5` and the default initial step
+``\alpha=1``, the trial steps are those of their search. The scalar choice
+``\eta=\mathcal{D}(x,d(x))`` gives ``s_i\leq\eta``, so (7) implies the scalar
+condition; the converse does not hold in general, and the two choices may
+accept different steps.
 
 ### The generalized directional derivative
 
@@ -170,6 +177,38 @@ The objectives ``F_i`` need not be differentiable here, so the slopes used for
 interpolation are chosen by the caller, for example the directional
 derivatives ``\nabla f_i(x)^\mathsf{T}d(x)`` of the differentiable parts.
 
+## [Nonmonotone reference](@id nonmonotone-reference)
+
+Mita, Fukuda and Yamashita [MFY2019](@cite), Algorithm 3, extend the max-type
+nonmonotone line search to multiobjective optimization. With a nonnegative
+integer ``M`` and ``m(k)=\min(k,M)``, their equation (9) sets, at iteration
+``k``,
+
+```math
+C_i^k=\max_{0\leq j\leq m(k)}F_i(x^{k-j}),\qquad i=1,\ldots,m,
+```
+
+the componentwise maximum over the last ``m(k)+1`` iterates, and their
+equation (10) accepts a step when
+``F(x^k+\alpha d^k)\leq C^k+c_1\alpha JF(x^k)d^k`` componentwise. With ``M=0``
+this is the monotone condition (7) of Fliege and Svaiter. Their Lemma 5 gives
+``F(x^k)\leq C^k``.
+
+`BackTracking` keeps no history between executions. The calling method stores
+the previous values, passes ``R=C^k`` as `reference` and `factor = slopes`, and
+updates its history only after accepting a step. Since ``R\geq F(x)``, every
+step accepted by the monotone condition is also accepted here. Interpolation
+still uses ``\phi_j(0)=F_j(x)``, not ``R_j``.
+
+## Initial step
+
+The option `initial_step` fixes the first trial of every execution. The keyword
+`alpha0` replaces it for one execution; it must satisfy
+`minstep <= alpha0 <= maxstep` after conversion. Steps that depend on previous
+iterates, such as the two-point step sizes of Barzilai and Borwein
+[BB1988](@cite), are computed by the calling method and passed as `alpha0`;
+the fixed `maxstep` must then be large enough to admit them.
+
 ## [Quadratic interpolation and safeguards](@id quadratic-interpolation)
 
 Suppose a trial with finite values is rejected, and let ``j`` be the first
@@ -214,7 +253,7 @@ When ``s_j=\phi_j'(0)``, ``q_j`` and ``\widehat\alpha`` are the quadratic
 interpolant and its minimizer in Nocedal and Wright [NW2006](@cite),
 Section 3.5, equations (3.57) and (3.58). Otherwise ``q_j`` still matches the two
 values and the slope ``s_j``. The slopes only affect the proposed steps; the
-acceptance test uses the objective values and ``\eta``.
+acceptance test uses the objective values, ``R`` and ``\eta_i``.
 
 Nocedal and Wright continue with cubic interpolation after the first quadratic
 trial, and reset a trial to half its predecessor when it is too close to or
@@ -228,14 +267,16 @@ choices of this implementation; the cited works do not prescribe them.
 The consumer may pass a nonnegative `maxstep` to each execution (`Inf` by
 default). Convert it conservatively and intersect it with the fixed method
 bounds. If the resulting upper bound is below `minstep`, return `:step_limit`
-without evaluation. Otherwise start at the smaller of `initial_step.alpha` and
-the consumer bound:
+without evaluation. Otherwise start at the smaller of the initial step
+(`alpha0`, or `initial_step.alpha` when `alpha0` is not given) and the consumer
+bound:
 
 1. Form ``x+\alpha d(x)``. If it equals ``x`` in floating-point arithmetic,
    return `:indistinguishable_point` without evaluating it.
 2. Evaluate the objectives. If the evaluator reports an error, return
    `:evaluation_failure`.
-3. If all values are finite and satisfy the Armijo-type condition, return
+3. If all values are finite and satisfy the Armijo-type condition with the
+   reference ``R``, return
    `:success`.
 4. If `max_iters` reductions have been made, return `:max_iterations`.
 5. Reduce the step: halve it if some value is not finite, otherwise apply the
@@ -291,6 +332,30 @@ julia> (result.x_trial ≈ [1.0], result.F_trial ≈ [0.0, 1.0], x == [0.0])
 (true, true, true)
 
 julia> copyto!(x, result.x_trial); copyto!(Fx, result.F_trial);
+```
+
+With ``F_1(x)=x^2``, ``F_2(x)=4(x-3/4)^2``, ``x=1`` and ``d(x)=-1``, both
+slopes are ``-2`` and ``F(1)=(1,1/4)``. The monotone search rejects
+``\alpha=1``, since ``F_2(0)=9/4``, and accepts the interpolated step ``1/4``.
+With the reference ``R=(1,3)``, for example values of an earlier iterate, the
+step ``\alpha=1`` is accepted:
+
+```jldoctest backtracking_usage
+julia> function tradeoff!(values, x)
+           values[1] = x[1]^2
+           values[2] = 4 * (x[1] - 0.75)^2
+           return nothing
+       end;
+
+julia> x = [1.0]; d = [-1.0]; Fx = [1.0, 0.25]; slopes = [-2.0, -2.0];
+
+julia> search = configure_linesearch(BackTracking(), tradeoff!, x, Fx);
+
+julia> perform_linesearch!(search, x, d, Fx; slopes, factor=slopes).alpha
+0.25
+
+julia> perform_linesearch!(search, x, d, Fx; slopes, factor=slopes, reference=[1.0, 3.0]).alpha
+1.0
 ```
 
 For the evaluator contract and buffer ownership, see [Using a line search](@ref).

@@ -31,5 +31,12 @@ and releases follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reason, message, value/derivative counts and reduction count.
 - Documentation relating the condition to the multiobjective literature, with
   executable examples.
+- `BackTracking` accepts a vector `factor` (one negative term per objective),
+  which gives the Armijo-like rule of Fliege and Svaiter with `factor = slopes`.
+- Optional per-call `reference` (at least `Fx` componentwise) for nonmonotone
+  searches, such as the max-type search of Mita, Fukuda and Yamashita; the
+  caller keeps the history. Interpolation still uses `Fx`.
+- Optional per-call `alpha0` replacing the configured initial step, for steps
+  computed by the caller (for example, Barzilai–Borwein steps).
 
 [Unreleased]: https://github.com/VectorOptimizationGroup/MultiObjectiveLineSearches.jl/commits/main

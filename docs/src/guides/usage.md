@@ -29,14 +29,17 @@ BackTracking requires these iteration inputs:
 | `x`, `d` | Finite point and direction, with prepared point axes/type |
 | `Fx` | Finite objectives at `x`, with prepared value axes/type |
 | `slopes` | Finite vector with objective axes/type; used only for interpolation |
-| `factor` | Real scalar, finite and negative after conversion; controls acceptance |
+| `factor` | Real scalar, finite and negative after conversion, or vector with objective axes/type and finite negative entries; controls acceptance |
 | `maxstep` | Nonnegative real bound; `Inf` adds no restriction |
+| `reference` | Optional; finite vector with objective axes/type and `reference .>= Fx`; replaces `Fx` in acceptance (nonmonotone searches) |
+| `alpha0` | Optional real; initial step for this call, in `[minstep, maxstep]` after conversion |
 
 New data are validated each call; fixed options and buffers are reused.
 Inputs may alias each other but must not alias prepared outputs, including
 through views. Invalid axes raise `DimensionMismatch`; invalid types, values
 or aliasing raise `ArgumentError`. The search trusts `Fx` and the mathematical
-meaning of `slopes`/`factor`; it computes no derivatives.
+meaning of `slopes`/`factor`/`reference`; it computes no derivatives and keeps
+no history between calls.
 
 ## Evaluator
 
